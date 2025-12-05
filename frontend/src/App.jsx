@@ -7,6 +7,22 @@ const App = () => {
   const [activeView, setActiveView] = useState("dashboard");
   const [alertFilter, setAlertFilter] = useState("all");
   const [timeFilter, setTimeFilter] = useState("today");
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formattedTime = useMemo(() => {
+    const pad = (n) => String(n).padStart(2, "0");
+    const year = now.getFullYear();
+    const month = pad(now.getMonth() + 1);
+    const day = pad(now.getDate());
+    const hours = pad(now.getHours());
+    const minutes = pad(now.getMinutes());
+    const seconds = pad(now.getSeconds());
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  }, [now]);
 
   // ====== DATA STATE ======
   const [stats, setStats] = useState({
@@ -121,8 +137,8 @@ const App = () => {
               </svg>
             </div>
             <div className="logo-text">
-              <h1>SafetyVision AI</h1>
-              <p className="subtitle">Urban Monitoring System</p>
+              <h1>Sentinal AI</h1>
+              <p className="subtitle">Urban Safe Monitoring System</p>
             </div>
           </div>
 
@@ -535,6 +551,9 @@ const App = () => {
                         Stream preview
                       </div>
                     )}
+
+                    {/* 👇 CCTV-style timestamp overlay */}
+                    <div className="camera-tile-time">{formattedTime}</div>
                   </div>
                 ))}
               </div>
