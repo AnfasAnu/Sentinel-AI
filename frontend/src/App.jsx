@@ -8,6 +8,8 @@ const App = () => {
   const [alertFilter, setAlertFilter] = useState("all");
   const [timeFilter, setTimeFilter] = useState("today");
   const [now, setNow] = useState(new Date());
+
+  // ================== CCTV TIME OVERLAY ==================
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(interval);
@@ -49,28 +51,33 @@ const App = () => {
     { id: "map", label: "Map View", icon: "map" },
   ];
 
-  // ====== FETCH DATA FROM BACKEND ======
+  // ====== FETCH STATS / CAMERAS / THREATS (EVERY 3s) ======
   useEffect(() => {
+    let isMounted = true;
+
     const fetchData = async () => {
       try {
-        setLoading(true);
+        if (!isMounted) return;
+
+        // Only set loading true on first load
+        setLoading((prev) => (prev ? true : false));
         setError("");
 
-        const [statsRes, camsRes, alertsRes, threatsRes] = await Promise.all([
+        const [statsRes, camsRes, threatsRes] = await Promise.all([
           fetch(`${API_BASE}/api/stats`),
           fetch(`${API_BASE}/api/cameras`),
-          fetch(`${API_BASE}/api/alerts`),
           fetch(`${API_BASE}/api/threats?range=${timeFilter}`),
         ]);
 
-        if (!statsRes.ok || !camsRes.ok || !alertsRes.ok || !threatsRes.ok) {
+        if (!statsRes.ok || !camsRes.ok || !threatsRes.ok) {
           throw new Error("Failed to fetch one or more resources");
         }
 
         const statsJson = await statsRes.json();
         const camsJson = await camsRes.json();
-        const alertsJson = await alertsRes.json();
         const threatsJson = await threatsRes.json();
+
+        if (!isMounted) return;
 
         setStats((prev) => ({
           ...prev,
@@ -82,18 +89,65 @@ const App = () => {
         }));
 
         setCameras(camsJson || []);
-        setAlerts(alertsJson || []);
         setThreats(threatsJson || []);
+        setLoading(false);
       } catch (err) {
         console.error(err);
+        if (!isMounted) return;
         setError(err.message || "Error loading data");
-      } finally {
         setLoading(false);
       }
     };
 
+    // Initial fetch
     fetchData();
-  }, [timeFilter]); // re-fetch threats when timeFilter changes
+
+    // Poll every 3 seconds
+    const intervalId = setInterval(fetchData, 3000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, [timeFilter]);
+
+  // ====== POLL ALERTS EVERY 1 SECOND ======
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchAlerts = async () => {
+      try {
+        if (!isMounted) return;
+        const res = await fetch(`${API_BASE}/api/alerts`);
+        if (!res.ok) throw new Error("Failed to fetch alerts");
+        const json = await res.json();
+        if (!isMounted) return;
+
+        const alertsArray = Array.isArray(json) ? json : [];
+
+        // Update alerts list
+        setAlerts(alertsArray);
+
+        // Update alert badge live (count of alerts)
+        setStats((prev) => ({
+          ...prev,
+          alertBadge: alertsArray.length,
+        }));
+      } catch (err) {
+        console.error("Alert polling error:", err);
+      }
+    };
+
+    // initial quick fetch
+    fetchAlerts();
+
+    const intervalId = setInterval(fetchAlerts, 1000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, []);
 
   // Filter alerts on client
   const filteredAlerts = useMemo(() => {
@@ -552,7 +606,7 @@ const App = () => {
                       </div>
                     )}
 
-                    {/* 👇 CCTV-style timestamp overlay */}
+                    {/* CCTV-style timestamp overlay */}
                     <div className="camera-tile-time">{formattedTime}</div>
                   </div>
                 ))}

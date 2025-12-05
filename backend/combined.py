@@ -10,6 +10,9 @@ from huggingface_hub import hf_hub_download
 import os
 import shutil
 import mediapipe as mp
+from collections import deque
+from datetime import datetime
+from threading import Lock
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": ["http://localhost:5173"]}})
@@ -20,30 +23,27 @@ CORS(app, resources={r"/*": {"origins": ["http://localhost:5173"]}})
 
 # ---------- HOW OFTEN TO RUN EACH DETECTOR ----------
 # Smaller = more frequent = heavier load
-FIRE_EVERY = 2        # run fire detection every frame (cheap)
-GESTURE_EVERY = 3     # run Mediapipe every 2nd frame
-YOLO_EVERY = 5        # run YOLO every 5th frame (heaviest)
+FIRE_EVERY = 2        # run fire detection every N frames
+GESTURE_EVERY = 3     # run Mediapipe every N frames
+YOLO_EVERY = 5        # run YOLO every N frames (heaviest)
 
 # ---------- FIRE DETECTION THRESHOLDS ----------
-# FIRE_SENSITIVITY scales all base thresholds.
-# Increase -> more strict (needs bigger / stronger flames)
-# Decrease -> more sensitive (detects smaller, weaker flames, more false positives)
 FIRE_SENSITIVITY = 1.6        # recommended ~0.8–2.0
-
 FIRE_MIN_SAT_BASE = 100       # base saturation threshold
 FIRE_MIN_VAL_BASE = 120       # base brightness threshold
 FIRE_MIN_AREA_BASE = 2000     # base contour area (pixels)
 
 # ---------- GESTURE (MEDIAPIPE) THRESHOLDS ----------
-# Increase -> more confident but might miss hands
-# Decrease -> more sensitive but noisy
 GESTURE_MIN_DET_CONF = 0.1
 GESTURE_MIN_TRACK_CONF = 0.5
 
 # ---------- YOLO WEAPON / THREAT THRESHOLDS ----------
-# Increase -> fewer boxes, more confident detections
-# Decrease -> more boxes, more false positives
 YOLO_CONF_THRESHOLD = 0.45
+
+# ---------- ALERT RATE LIMIT (in frames) ----------
+ALERT_FIRE_MIN_FRAMES = 30      # min frames between fire alerts
+ALERT_GESTURE_MIN_FRAMES = 60   # min frames between gesture alerts
+ALERT_YOLO_MIN_FRAMES = 30      # min frames between weapon alerts
 
 # ============================================================
 #                        CAMERA SETUP
@@ -55,6 +55,38 @@ camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
 
 if not camera.isOpened():
     print("⚠️ Warning: Could not open camera 0")
+
+# ============================================================
+#                ALERT STORAGE (GLOBAL, IN-MEMORY)
+# ============================================================
+
+MAX_ALERTS = 50
+ALERTS = deque(maxlen=MAX_ALERTS)
+ALERTS_LOCK = Lock()
+next_alert_id = 1
+
+# Track last frame index when we sent each alert type
+last_fire_alert_frame = -999999
+last_gesture_alert_frame = -999999
+last_yolo_alert_frame = -999999
+
+
+def add_alert(alert_type, title, camera_name="Laptop Camera 1", zone="Zone A"):
+    """
+    alert_type: "critical" | "warning" | "info"
+    """
+    global next_alert_id
+    with ALERTS_LOCK:
+        alert = {
+            "id": f"a{next_alert_id}",
+            "type": alert_type,
+            "title": title,
+            "camera": camera_name,
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "zone": zone,
+        }
+        ALERTS.appendleft(alert)
+        next_alert_id += 1
 
 
 # ============================================================
@@ -157,6 +189,8 @@ def run_gesture(frame):
             2,
         )
 
+    return thumbs_up_detected
+
 
 # ============================================================
 #                  YOLO WEAPON DETECTION
@@ -197,7 +231,24 @@ def run_yolo(frame):
         verbose=False
     )
     last_yolo_result = results[0]
-    
+
+    # Determine if a "weapon-like" object is present
+    weapon_detected = False
+    other_threat_detected = False
+
+    if last_yolo_result.boxes is not None and len(last_yolo_result.boxes) > 0:
+        names = last_yolo_result.names  # class id -> name
+        for box in last_yolo_result.boxes:
+            cls_id = int(box.cls[0])
+            cls_name = names.get(cls_id, str(cls_id)).lower()
+
+            # heuristic for weapon-like classes
+            if any(k in cls_name for k in ["gun", "knife", "pistol", "rifle", "weapon"]):
+                weapon_detected = True
+            else:
+                other_threat_detected = True
+
+    return weapon_detected, other_threat_detected
 
 
 def draw_yolo(frame):
@@ -213,6 +264,8 @@ def draw_yolo(frame):
 # ============================================================
 
 def generate_frames():
+    global last_fire_alert_frame, last_gesture_alert_frame, last_yolo_alert_frame
+
     frame_idx = 0
 
     while True:
@@ -226,18 +279,19 @@ def generate_frames():
         # ---- FIRE every FIRE_EVERY frames ----
         if frame_idx % FIRE_EVERY == 0:
             fire_boxes = detect_fire(frame)
-            for (x, y, w, h) in fire_boxes:
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
-                cv2.putText(
-                    frame,
-                    "FIRE",
-                    (x, y - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (0, 0, 255),
-                    2,
-                )
             if fire_boxes:
+                for (x, y, w, h) in fire_boxes:
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+                    cv2.putText(
+                        frame,
+                        "FIRE",
+                        (x, y - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (0, 0, 255),
+                        2,
+                    )
+
                 cv2.putText(
                     frame,
                     "FIRE DETECTED",
@@ -248,13 +302,50 @@ def generate_frames():
                     3,
                 )
 
+                # Rate-limited alert
+                if frame_idx - last_fire_alert_frame >= ALERT_FIRE_MIN_FRAMES:
+                    add_alert(
+                        alert_type="critical",
+                        title="Fire pattern detected",
+                        camera_name="Laptop Camera 1",
+                        zone="Entrance",
+                    )
+                    last_fire_alert_frame = frame_idx
+
         # ---- GESTURE every GESTURE_EVERY frames ----
+        thumbs_up_detected = False
         if frame_idx % GESTURE_EVERY == 0:
-            run_gesture(frame)
+            thumbs_up_detected = run_gesture(frame)
+
+            if thumbs_up_detected and frame_idx - last_gesture_alert_frame >= ALERT_GESTURE_MIN_FRAMES:
+                add_alert(
+                    alert_type="info",
+                    title="Thumbs-up gesture detected",
+                    camera_name="Laptop Camera 1",
+                    zone="Control Zone",
+                )
+                last_gesture_alert_frame = frame_idx
 
         # ---- YOLO every YOLO_EVERY frames ----
         if frame_idx % YOLO_EVERY == 0:
-            run_yolo(frame)
+            weapon_detected, other_threat = run_yolo(frame)
+
+            if weapon_detected and frame_idx - last_yolo_alert_frame >= ALERT_YOLO_MIN_FRAMES:
+                add_alert(
+                    alert_type="critical",
+                    title="Weapon-like object detected",
+                    camera_name="Laptop Camera 1",
+                    zone="High-risk Zone",
+                )
+                last_yolo_alert_frame = frame_idx
+            elif (not weapon_detected) and other_threat and frame_idx - last_yolo_alert_frame >= ALERT_YOLO_MIN_FRAMES:
+                add_alert(
+                    alert_type="warning",
+                    title="Suspicious activity detected by YOLO",
+                    camera_name="Laptop Camera 1",
+                    zone="Monitored Area",
+                )
+                last_yolo_alert_frame = frame_idx
 
         # Always draw last YOLO result (even if not recomputed this frame)
         draw_yolo(frame)
@@ -281,18 +372,18 @@ def video_feed():
 
 
 # ============================================================
-#                SAME JSON ENDPOINTS AS BEFORE
+#                JSON ENDPOINTS (DYNAMIC ALERTS)
 # ============================================================
 
 @app.route("/api/stats")
 def get_stats():
     stats = {
-        "criticalAlerts": 3,
-        "warningAlerts": 9,
-        "resolvedToday": 47,
+        "criticalAlerts": sum(1 for a in ALERTS if a["type"] == "critical"),
+        "warningAlerts": sum(1 for a in ALERTS if a["type"] == "warning"),
+        "resolvedToday": 47,  # static for now
         "detectionRate": 98.7,
         "activeCameras": 4,
-        "alertBadge": 12,
+        "alertBadge": len(ALERTS),
     }
     return jsonify(stats)
 
@@ -316,47 +407,15 @@ def get_cameras():
 
 @app.route("/api/alerts")
 def get_alerts():
-    alerts = [
-        {
-            "id": "a1",
-            "type": "critical",
-            "title": "Weapon-like object detected",
-            "camera": "Laptop Camera 1",
-            "time": "16:42",
-            "zone": "Entrance",
-        },
-        {
-            "id": "a2",
-            "type": "warning",
-            "title": "Fire pattern detected",
-            "camera": "Laptop Camera 2",
-            "time": "16:35",
-            "zone": "Parking",
-        },
-        {
-            "id": "a3",
-            "type": "warning",
-            "title": "Suspicious gesture detected",
-            "camera": "Laptop Camera 3",
-            "time": "16:10",
-            "zone": "Corridor",
-        },
-        {
-            "id": "a4",
-            "type": "info",
-            "title": "New face added to watchlist",
-            "camera": "Laptop Camera 4",
-            "time": "15:50",
-            "zone": "Lobby",
-        },
-    ]
-    return jsonify(alerts)
+    with ALERTS_LOCK:
+        return jsonify(list(ALERTS))
 
 
 @app.route("/api/threats")
 def get_threats():
     time_range = request.args.get("range", "today")
 
+    # Still static summary; can later derive from ALERTS if you want
     if time_range == "today":
         threats = [
             {"id": "t1", "label": "Weapons Detected", "value": 1, "trend": "+1 vs yesterday"},
@@ -390,6 +449,9 @@ def index():
                 "YOLO_CONF_THRESHOLD": YOLO_CONF_THRESHOLD,
                 "GESTURE_MIN_DET_CONF": GESTURE_MIN_DET_CONF,
                 "GESTURE_MIN_TRACK_CONF": GESTURE_MIN_TRACK_CONF,
+                "ALERT_FIRE_MIN_FRAMES": ALERT_FIRE_MIN_FRAMES,
+                "ALERT_GESTURE_MIN_FRAMES": ALERT_GESTURE_MIN_FRAMES,
+                "ALERT_YOLO_MIN_FRAMES": ALERT_YOLO_MIN_FRAMES,
             },
             "endpoints": [
                 "/video_feed",
