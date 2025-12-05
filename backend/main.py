@@ -18,7 +18,7 @@ if not camera.isOpened():
 # --- MAIN THRESHOLD CONTROL ---
 # Increase → more strict (less false)
 # Decrease → more sensitive (detects smaller flames)
-FIRE_SENSITIVITY = 1.6  # Recommended range: 0.5 to 2.0
+FIRE_SENSITIVITY = 1.7  # Recommended range: 0.5 to 2.0
 
 
 def detect_fire(frame):
