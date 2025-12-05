@@ -14,7 +14,41 @@ import mediapipe as mp
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": ["http://localhost:5173"]}})
 
-# ---------- CAMERA ----------
+# ============================================================
+#                 GLOBAL CONFIG / THRESHOLDS
+# ============================================================
+
+# ---------- HOW OFTEN TO RUN EACH DETECTOR ----------
+# Smaller = more frequent = heavier load
+FIRE_EVERY = 2        # run fire detection every frame (cheap)
+GESTURE_EVERY = 3     # run Mediapipe every 2nd frame
+YOLO_EVERY = 5        # run YOLO every 5th frame (heaviest)
+
+# ---------- FIRE DETECTION THRESHOLDS ----------
+# FIRE_SENSITIVITY scales all base thresholds.
+# Increase -> more strict (needs bigger / stronger flames)
+# Decrease -> more sensitive (detects smaller, weaker flames, more false positives)
+FIRE_SENSITIVITY = 1.6        # recommended ~0.8–2.0
+
+FIRE_MIN_SAT_BASE = 100       # base saturation threshold
+FIRE_MIN_VAL_BASE = 120       # base brightness threshold
+FIRE_MIN_AREA_BASE = 2000     # base contour area (pixels)
+
+# ---------- GESTURE (MEDIAPIPE) THRESHOLDS ----------
+# Increase -> more confident but might miss hands
+# Decrease -> more sensitive but noisy
+GESTURE_MIN_DET_CONF = 0.1
+GESTURE_MIN_TRACK_CONF = 0.5
+
+# ---------- YOLO WEAPON / THREAT THRESHOLDS ----------
+# Increase -> fewer boxes, more confident detections
+# Decrease -> more boxes, more false positives
+YOLO_CONF_THRESHOLD = 0.45
+
+# ============================================================
+#                        CAMERA SETUP
+# ============================================================
+
 camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
 camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
@@ -22,26 +56,18 @@ camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
 if not camera.isOpened():
     print("⚠️ Warning: Could not open camera 0")
 
-# ---------- CONFIG: HOW OFTEN TO RUN EACH DETECTOR ----------
-FIRE_EVERY = 1        # run fire detection every frame (it's cheap)
-GESTURE_EVERY = 2     # run Mediapipe every 2nd frame
-YOLO_EVERY = 5        # run YOLO every 5th frame  (heaviest)
-
-CONFIDENCE_THRESHOLD = 0.4
 
 # ============================================================
 #                   FIRE DETECTION SETUP
 # ============================================================
 
-FIRE_SENSITIVITY = 1.6  # you used this earlier
-
-
 def detect_fire(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-    min_sat = int(100 * FIRE_SENSITIVITY)
-    min_val = int(120 * FIRE_SENSITIVITY)
-    min_area = int(2000 * FIRE_SENSITIVITY)
+    # scale base thresholds by sensitivity
+    min_sat = int(FIRE_MIN_SAT_BASE * FIRE_SENSITIVITY)
+    min_val = int(FIRE_MIN_VAL_BASE * FIRE_SENSITIVITY)
+    min_area = int(FIRE_MIN_AREA_BASE * FIRE_SENSITIVITY)
 
     min_sat = max(0, min(min_sat, 255))
     min_val = max(0, min(min_val, 255))
@@ -65,7 +91,7 @@ def detect_fire(frame):
 
         x, y, w, h = cv2.boundingRect(cnt)
         h_to_w = h / float(w)
-        if h_to_w < 0.5:
+        if h_to_w < 0.5:  # flames usually taller than wide
             continue
 
         fire_zones.append((x, y, w, h))
@@ -83,14 +109,16 @@ mp_drawing = mp.solutions.drawing_utils
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=1,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5,
+    min_detection_confidence=GESTURE_MIN_DET_CONF,
+    min_tracking_confidence=GESTURE_MIN_TRACK_CONF,
 )
 
 
 def is_thumbs_up(hand_landmarks):
+    # Thumb tip (4) above MCP joint (2)
     thumb_up = hand_landmarks.landmark[4].y < hand_landmarks.landmark[2].y
 
+    # Other fingers folded (tip below MCP)
     folded_fingers = True
     finger_tips = [8, 12, 16, 20]
     finger_mcps = [5, 9, 13, 17]
@@ -164,21 +192,19 @@ def run_yolo(frame):
 
     results = model(
         frame,
-        conf=CONFIDENCE_THRESHOLD,
+        conf=YOLO_CONF_THRESHOLD,
         device=device,
         verbose=False
     )
     last_yolo_result = results[0]
+    
 
 
 def draw_yolo(frame):
-    # use cached last_yolo_result to draw boxes
+    # Use cached last_yolo_result to draw boxes
     if last_yolo_result is not None:
         plotted = last_yolo_result.plot()
-        # plotted is a new image with drawings,
-        # but we want to keep any fire/gesture overlays too.
-        # So instead, we can copy the drawings back onto "frame".
-        # Easiest: just replace frame:
+        # Replace frame contents with YOLO drawn frame
         frame[:] = plotted
 
 
@@ -254,7 +280,10 @@ def video_feed():
     )
 
 
-# ====== (same API endpoints you already had) ======
+# ============================================================
+#                SAME JSON ENDPOINTS AS BEFORE
+# ============================================================
+
 @app.route("/api/stats")
 def get_stats():
     stats = {
@@ -352,6 +381,16 @@ def index():
             "message": "Sentinal AI backend running (multi-threat mode)",
             "device": "GPU" if device == 0 else "CPU",
             "model_repo": MODEL_REPO,
+            "model_path": MODEL_LOCAL_PATH,
+            "config": {
+                "FIRE_EVERY": FIRE_EVERY,
+                "GESTURE_EVERY": GESTURE_EVERY,
+                "YOLO_EVERY": YOLO_EVERY,
+                "FIRE_SENSITIVITY": FIRE_SENSITIVITY,
+                "YOLO_CONF_THRESHOLD": YOLO_CONF_THRESHOLD,
+                "GESTURE_MIN_DET_CONF": GESTURE_MIN_DET_CONF,
+                "GESTURE_MIN_TRACK_CONF": GESTURE_MIN_TRACK_CONF,
+            },
             "endpoints": [
                 "/video_feed",
                 "/api/stats",
