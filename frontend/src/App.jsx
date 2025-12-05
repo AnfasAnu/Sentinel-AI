@@ -155,6 +155,230 @@ const App = () => {
     return alerts.filter((a) => a.type === alertFilter);
   }, [alerts, alertFilter]);
 
+  // ====== REUSABLE SECTIONS ======
+
+  const CameraSection = () => (
+    <section className="camera-grid-section">
+      <div className="section-header">
+        <h2>Live Camera Feeds</h2>
+        <div className="section-actions">
+          <button className="btn-secondary" id="gridViewBtn">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <rect
+                x="3"
+                y="3"
+                width="7"
+                height="7"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <rect
+                x="14"
+                y="3"
+                width="7"
+                height="7"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <rect
+                x="3"
+                y="14"
+                width="7"
+                height="7"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <rect
+                x="14"
+                y="14"
+                width="7"
+                height="7"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div className="camera-grid" id="cameraGrid">
+        {cameras.length === 0 && !loading && (
+          <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+            No cameras loaded.
+          </p>
+        )}
+        {cameras.map((cam) => (
+          <div key={cam.id} className="camera-tile">
+            <div className="camera-tile-header">
+              {cam.name || "Camera"} · {cam.location || "Unknown"}
+            </div>
+            {cam.thumbnail ? (
+              // MJPEG stream from backend
+              <img
+                src={cam.thumbnail}
+                alt={cam.name}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  height: 140,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "0.8rem",
+                  color: "#6b7280",
+                }}
+              >
+                Stream preview
+              </div>
+            )}
+
+            {/* CCTV-style timestamp overlay */}
+            <div className="camera-tile-time">{formattedTime}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+
+  const AlertSection = () => (
+    <section className="alert-feed-section">
+      <div className="section-header">
+        <h2>Recent Alerts</h2>
+        <div className="filter-buttons">
+          <button
+            className={`filter-btn ${alertFilter === "all" ? "active" : ""}`}
+            data-filter="all"
+            onClick={() => setAlertFilter("all")}
+          >
+            All
+          </button>
+          <button
+            className={`filter-btn ${
+              alertFilter === "critical" ? "active" : ""
+            }`}
+            data-filter="critical"
+            onClick={() => setAlertFilter("critical")}
+          >
+            Critical
+          </button>
+          <button
+            className={`filter-btn ${
+              alertFilter === "warning" ? "active" : ""
+            }`}
+            data-filter="warning"
+            onClick={() => setAlertFilter("warning")}
+          >
+            Warning
+          </button>
+        </div>
+      </div>
+      <div className="alert-feed" id="alertFeed">
+        {filteredAlerts.length === 0 && !loading && (
+          <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+            No alerts for this filter.
+          </p>
+        )}
+        {filteredAlerts.map((alert) => (
+          <div key={alert.id} className="alert-item">
+            <div className="alert-item-header">
+              <span className="alert-title">{alert.title}</span>
+              <span
+                className={
+                  "alert-badge " +
+                  (alert.type === "warning"
+                    ? "warning"
+                    : alert.type === "info"
+                    ? "info"
+                    : "")
+                }
+              >
+                {alert.type?.toUpperCase()}
+              </span>
+            </div>
+            <div className="alert-meta">
+              <span>{alert.camera || "Unknown camera"}</span>
+              <span>
+                {alert.time} · {alert.zone || "Unknown zone"}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+
+  const ThreatSection = () => (
+    <section className="threat-stats-section">
+      <div className="section-header">
+        <h2>Threat Detection Overview</h2>
+        <select
+          className="time-filter"
+          id="timeFilter"
+          value={timeFilter}
+          onChange={(e) => setTimeFilter(e.target.value)}
+        >
+          <option value="today">Today</option>
+          <option value="week">This Week</option>
+          <option value="month">This Month</option>
+        </select>
+      </div>
+      <div className="threat-grid" id="threatGrid">
+        {threats.length === 0 && !loading && (
+          <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+            No threat stats available.
+          </p>
+        )}
+        {threats.map((th) => (
+          <div key={th.id} className="threat-card">
+            <span className="threat-label">{th.label}</span>
+            <span className="threat-value">
+              {typeof th.value === "number" ? th.value : "--"}
+            </span>
+            <span className="threat-trend">{th.trend}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+
+  const MapSection = () => (
+    <section className="map-section">
+      <div className="section-header">
+        <h2>Camera Map View</h2>
+        <p className="map-subtitle">
+          Lightweight map-style list using live camera metadata.
+        </p>
+      </div>
+      {cameras.length === 0 && !loading && (
+        <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+          No cameras registered.
+        </p>
+      )}
+      <div className="map-list">
+        {cameras.map((cam) => (
+          <div key={cam.id} className="map-item">
+            <div className="map-item-main">
+              <span className="map-item-name">{cam.name}</span>
+              <span className="map-item-location">{cam.location}</span>
+            </div>
+            <span className={`map-item-status ${cam.status || "online"}`}>
+              {cam.status || "online"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+
   return (
     <div className="app-root">
       {/* Header */}
@@ -227,7 +451,7 @@ const App = () => {
                 data-view={item.id}
                 onClick={() => setActiveView(item.id)}
               >
-                {/* icons (same as before) */}
+                {/* icons */}
                 {item.icon === "grid" && (
                   <svg
                     viewBox="0 0 24 24"
@@ -403,7 +627,7 @@ const App = () => {
             </div>
           )}
 
-          {/* Stats Grid */}
+          {/* Stats Grid (always visible at top) */}
           <section className="stats-grid">
             <div className="stat-card critical">
               <div className="stat-icon">
@@ -521,199 +745,41 @@ const App = () => {
             </div>
           </section>
 
-          {/* Main Grid */}
-          <div className="content-grid">
-            {/* Live Camera Feed */}
-            <section className="camera-grid-section">
-              <div className="section-header">
-                <h2>Live Camera Feeds</h2>
-                <div className="section-actions">
-                  <button className="btn-secondary" id="gridViewBtn">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <rect
-                        x="3"
-                        y="3"
-                        width="7"
-                        height="7"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      />
-                      <rect
-                        x="14"
-                        y="3"
-                        width="7"
-                        height="7"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      />
-                      <rect
-                        x="3"
-                        y="14"
-                        width="7"
-                        height="7"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      />
-                      <rect
-                        x="14"
-                        y="14"
-                        width="7"
-                        height="7"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <div className="camera-grid" id="cameraGrid">
-                {cameras.length === 0 && !loading && (
-                  <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
-                    No cameras loaded.
-                  </p>
-                )}
-                {cameras.map((cam) => (
-                  <div key={cam.id} className="camera-tile">
-                    <div className="camera-tile-header">
-                      {cam.name || "Camera"} · {cam.location || "Unknown"}
-                    </div>
-                    {cam.thumbnail ? (
-                      <img
-                        src={cam.thumbnail}
-                        alt={cam.name}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                        }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          height: 140,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: "0.8rem",
-                          color: "#6b7280",
-                        }}
-                      >
-                        Stream preview
-                      </div>
-                    )}
+          {/* VIEW SWITCHING BELOW STATS */}
 
-                    {/* CCTV-style timestamp overlay */}
-                    <div className="camera-tile-time">{formattedTime}</div>
-                  </div>
-                ))}
+          {activeView === "dashboard" && (
+            <>
+              <div className="content-grid">
+                <CameraSection />
+                <AlertSection />
               </div>
-            </section>
+              <ThreatSection />
+            </>
+          )}
 
-            {/* Alert Feed */}
-            <section className="alert-feed-section">
-              <div className="section-header">
-                <h2>Recent Alerts</h2>
-                <div className="filter-buttons">
-                  <button
-                    className={`filter-btn ${
-                      alertFilter === "all" ? "active" : ""
-                    }`}
-                    data-filter="all"
-                    onClick={() => setAlertFilter("all")}
-                  >
-                    All
-                  </button>
-                  <button
-                    className={`filter-btn ${
-                      alertFilter === "critical" ? "active" : ""
-                    }`}
-                    data-filter="critical"
-                    onClick={() => setAlertFilter("critical")}
-                  >
-                    Critical
-                  </button>
-                  <button
-                    className={`filter-btn ${
-                      alertFilter === "warning" ? "active" : ""
-                    }`}
-                    data-filter="warning"
-                    onClick={() => setAlertFilter("warning")}
-                  >
-                    Warning
-                  </button>
-                </div>
-              </div>
-              <div className="alert-feed" id="alertFeed">
-                {filteredAlerts.length === 0 && !loading && (
-                  <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
-                    No alerts for this filter.
-                  </p>
-                )}
-                {filteredAlerts.map((alert) => (
-                  <div key={alert.id} className="alert-item">
-                    <div className="alert-item-header">
-                      <span className="alert-title">{alert.title}</span>
-                      <span
-                        className={
-                          "alert-badge " +
-                          (alert.type === "warning"
-                            ? "warning"
-                            : alert.type === "info"
-                            ? "info"
-                            : "")
-                        }
-                      >
-                        {alert.type?.toUpperCase()}
-                      </span>
-                    </div>
-                    <div className="alert-meta">
-                      <span>{alert.camera || "Unknown camera"}</span>
-                      <span>
-                        {alert.time} · {alert.zone || "Unknown zone"}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
+          {activeView === "cameras" && (
+            <>
+              <CameraSection />
+            </>
+          )}
 
-          {/* Threat Detection Stats */}
-          <section className="threat-stats-section">
-            <div className="section-header">
-              <h2>Threat Detection Overview</h2>
-              <select
-                className="time-filter"
-                id="timeFilter"
-                value={timeFilter}
-                onChange={(e) => setTimeFilter(e.target.value)}
-              >
-                <option value="today">Today</option>
-                <option value="week">This Week</option>
-                <option value="month">This Month</option>
-              </select>
-            </div>
-            <div className="threat-grid" id="threatGrid">
-              {threats.length === 0 && !loading && (
-                <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
-                  No threat stats available.
-                </p>
-              )}
-              {threats.map((th) => (
-                <div key={th.id} className="threat-card">
-                  <span className="threat-label">{th.label}</span>
-                  <span className="threat-value">
-                    {typeof th.value === "number" ? th.value : "--"}
-                  </span>
-                  <span className="threat-trend">{th.trend}</span>
-                </div>
-              ))}
-            </div>
-          </section>
+          {activeView === "alerts" && (
+            <>
+              <AlertSection />
+            </>
+          )}
+
+          {activeView === "analytics" && (
+            <>
+              <ThreatSection />
+            </>
+          )}
+
+          {activeView === "map" && (
+            <>
+              <MapSection />
+            </>
+          )}
         </main>
       </div>
     </div>
