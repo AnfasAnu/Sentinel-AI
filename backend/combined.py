@@ -25,20 +25,20 @@ CORS(app, resources={r"/*": {"origins": ["http://localhost:5173"]}})
 # Smaller = more frequent = heavier load
 FIRE_EVERY = 2        # run fire detection every N frames
 GESTURE_EVERY = 3     # run Mediapipe every N frames
-YOLO_EVERY = 5        # run YOLO every N frames (heaviest)
+YOLO_EVERY = 4        # run YOLO every N frames (heaviest)
 
 # ---------- FIRE DETECTION THRESHOLDS ----------
-FIRE_SENSITIVITY = 1.6        # recommended ~0.8–2.0
+FIRE_SENSITIVITY = 2.0        # recommended ~0.8–2.0
 FIRE_MIN_SAT_BASE = 100       # base saturation threshold
 FIRE_MIN_VAL_BASE = 120       # base brightness threshold
 FIRE_MIN_AREA_BASE = 2000     # base contour area (pixels)
 
 # ---------- GESTURE (MEDIAPIPE) THRESHOLDS ----------
 GESTURE_MIN_DET_CONF = 0.1
-GESTURE_MIN_TRACK_CONF = 0.5
+GESTURE_MIN_TRACK_CONF = 0.1
 
 # ---------- YOLO WEAPON / THREAT THRESHOLDS ----------
-YOLO_CONF_THRESHOLD = 0.45
+YOLO_CONF_THRESHOLD = 0.75
 
 # ---------- ALERT RATE LIMIT (in frames) ----------
 ALERT_FIRE_MIN_FRAMES = 30      # min frames between fire alerts
