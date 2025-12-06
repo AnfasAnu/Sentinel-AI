@@ -639,6 +639,21 @@ button {
   outline: none;
 }
 
+.camera-tile-time {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.7);
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: #e5e7eb;
+}
+
+
 /* ============== RESPONSIVE ============== */
 
 @media (max-width: 1100px) {
