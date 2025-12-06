@@ -2,6 +2,9 @@ import React, { useEffect, useState, useMemo } from "react";
 import "./index.css";
 
 const API_BASE = "http://localhost:5000";
+const SCVD_STREAM = "http://localhost:5001/video_feed"; // Fight + Weapon + C3D stream
+const SCVD_API_BASE = "http://localhost:5001";   // 🔥 new
+
 
 const App = () => {
   const [activeView, setActiveView] = useState("dashboard");
@@ -112,42 +115,57 @@ const App = () => {
   }, [timeFilter]);
 
   // ====== POLL ALERTS EVERY 1 SECOND ======
-  useEffect(() => {
-    let isMounted = true;
+  // ====== POLL ALERTS EVERY 1 SECOND (5000 + 5001) ======
+useEffect(() => {
+  let isMounted = true;
 
-    const fetchAlerts = async () => {
-      try {
-        if (!isMounted) return;
-        const res = await fetch(`${API_BASE}/api/alerts`);
-        if (!res.ok) throw new Error("Failed to fetch alerts");
-        const json = await res.json();
-        if (!isMounted) return;
+  const fetchAlerts = async () => {
+    try {
+      if (!isMounted) return;
 
-        const alertsArray = Array.isArray(json) ? json : [];
+      const [mainRes, scvdRes] = await Promise.all([
+        fetch(`${API_BASE}/api/alerts`).catch(() => null),
+        fetch(`${SCVD_API_BASE}/api/alerts`).catch(() => null),
+      ]);
 
-        // Update alerts list
-        setAlerts(alertsArray);
+      let mainAlerts = [];
+      let scvdAlerts = [];
 
-        // Update alert badge live (count of alerts)
-        setStats((prev) => ({
-          ...prev,
-          alertBadge: alertsArray.length,
-        }));
-      } catch (err) {
-        console.error("Alert polling error:", err);
+      if (mainRes && mainRes.ok) {
+        const json = await mainRes.json();
+        mainAlerts = Array.isArray(json) ? json : [];
       }
-    };
 
-    // initial quick fetch
-    fetchAlerts();
+      if (scvdRes && scvdRes.ok) {
+        const json = await scvdRes.json();
+        scvdAlerts = Array.isArray(json) ? json : [];
+      }
 
-    const intervalId = setInterval(fetchAlerts, 1000);
+      const merged = [...mainAlerts, ...scvdAlerts];
 
-    return () => {
-      isMounted = false;
-      clearInterval(intervalId);
-    };
-  }, []);
+      if (!isMounted) return;
+
+      setAlerts(merged);
+
+      setStats((prev) => ({
+        ...prev,
+        alertBadge: merged.length,
+      }));
+    } catch (err) {
+      console.error("Alert polling error:", err);
+    }
+  };
+
+  // initial quick fetch
+  fetchAlerts();
+
+  const intervalId = setInterval(fetchAlerts, 1000);
+
+  return () => {
+    isMounted = false;
+    clearInterval(intervalId);
+  };
+}, []);
 
   // Filter alerts on client
   const filteredAlerts = useMemo(() => {
@@ -204,7 +222,27 @@ const App = () => {
           </button>
         </div>
       </div>
+
       <div className="camera-grid" id="cameraGrid">
+        {/* 🔴 SCVD – Fight + Weapon + C3D dedicated tile */}
+        <div className="camera-tile">
+          <div className="camera-tile-header">
+            SCVD · Fight &amp; Weapon Stream
+          </div>
+          <img
+            src={SCVD_STREAM}
+            alt="SCVD Fight & Weapon Stream"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+          />
+          {/* CCTV-style timestamp overlay */}
+          <div className="camera-tile-time">{formattedTime}</div>
+        </div>
+
+        {/* Existing cameras from /api/cameras (multi-threat backend) */}
         {cameras.length === 0 && !loading && (
           <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
             No cameras loaded.
