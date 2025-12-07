@@ -23,9 +23,9 @@ CORS(app, resources={r"/*": {"origins": ["http://localhost:5173"]}})
 
 # ---------- HOW OFTEN TO RUN EACH DETECTOR ----------
 # Smaller = more frequent = heavier load
-FIRE_EVERY = 2        # run fire detection every N frames
-GESTURE_EVERY = 3     # run Mediapipe every N frames
-YOLO_EVERY = 5        # run YOLO every N frames (heaviest)
+FIRE_EVERY = 1        # run fire detection every N frames
+GESTURE_EVERY = 5     # run Mediapipe every N frames
+YOLO_EVERY = 3        # run YOLO every N frames (heaviest)
 
 # ---------- FIRE DETECTION THRESHOLDS ----------
 FIRE_SENSITIVITY = 2.0        # recommended ~0.8–2.0
@@ -34,11 +34,11 @@ FIRE_MIN_VAL_BASE = 120       # base brightness threshold
 FIRE_MIN_AREA_BASE = 2000     # base contour area (pixels)
 
 # ---------- GESTURE (MEDIAPIPE) THRESHOLDS ----------
-GESTURE_MIN_DET_CONF = 0.2
-GESTURE_MIN_TRACK_CONF = 0.2
+GESTURE_MIN_DET_CONF = 0.1
+GESTURE_MIN_TRACK_CONF = 0.1
 
 # ---------- YOLO WEAPON / THREAT THRESHOLDS ----------
-YOLO_CONF_THRESHOLD = 0.65
+YOLO_CONF_THRESHOLD = 0.55
 
 # ---------- ALERT RATE LIMIT (in frames) ----------
 ALERT_FIRE_MIN_FRAMES = 30      # min frames between fire alerts
@@ -243,7 +243,7 @@ def run_yolo(frame):
       cls_name = names.get(cls_id, str(cls_id)).lower()
 
       # heuristic for weapon-like classes
-      if any(k in cls_name for k in ["gun", "pistol", "rifle", "weapon"]):
+      if any(k in cls_name for k in ["gun", "knife", "pistol", "rifle", "weapon"]):
         weapon_detected = True
       else:
         other_threat_detected = True
@@ -319,7 +319,7 @@ def generate_frames():
       if thumbs_up_detected and frame_idx - last_gesture_alert_frame >= ALERT_GESTURE_MIN_FRAMES:
         add_alert(
           alert_type="info",
-          title="SOS detected Need help",
+          title="Thumbs-up gesture detected",
           camera_name="Laptop Camera 1",
           zone="Control Zone",
         )
@@ -340,7 +340,7 @@ def generate_frames():
       elif (not weapon_detected) and other_threat and frame_idx - last_yolo_alert_frame >= ALERT_YOLO_MIN_FRAMES:
         add_alert(
           alert_type="warning",
-          title="Violence detected ",
+          title="Suspicious activity detected by YOLO",
           camera_name="Laptop Camera 1",
           zone="Monitored Area",
         )
@@ -391,14 +391,15 @@ def get_stats():
 def get_cameras():
   base_url = "http://localhost:5000/video_feed"
   cams = []
-  cams.append(
+  for i in range(1, 3):
+    cams.append(
       {
-        "id": "cam-1",
-        "name": "Laptop Camera 1",
+        "id": f"cam-{i}",
+        "name": f"Laptop Camera {i}",
         "location": "Local Device",
         "status": "online",
         "thumbnail": base_url,
-      },
+      }
     )
   return jsonify(cams)
 
@@ -427,7 +428,7 @@ def get_threats():
   weapons = count_where(
     lambda a: any(
       key in a["title"].lower()
-      for key in ["weapon", "gun", "pistol", "rifle"]
+      for key in ["weapon", "gun", "knife", "pistol", "rifle"]
     )
   )
   fire = count_where(lambda a: "fire" in a["title"].lower())
